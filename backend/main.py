@@ -7,9 +7,9 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from rules import evaluate_all
-from risk_fusion import calculate_score
-from ml_anomaly import detect_session_anomalies
+from backend.rules import evaluate_all
+from backend.risk_fusion import calculate_score
+from backend.ml_anomaly import detect_session_anomalies
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
