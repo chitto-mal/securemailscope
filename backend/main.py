@@ -7,6 +7,7 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from rules import evaluate_all
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -417,15 +418,6 @@ def analyze(data: bytes, name: str):
         counts[flow["protocol"]] += 1
 
         sf = []
-        if has_starttls:
-            sf.append({"severity": "info", "title": "STARTTLS transition observed", "evidence": "STARTTLS was visible in the reconstructed bidirectional mail stream."})
-        if has_starttls and not tls_seen:
-            sf.append({"severity": "medium", "title": "TLS handshake not observed after STARTTLS", "evidence": "STARTTLS was visible, but no TLS handshake record was observable in this flow."})
-        if version in ("3.1", "3.2"):
-            sf.append({"severity": "high", "title": "Legacy TLS record version observed", "evidence": f"TLS record legacy version {version} was visible."})
-        if tls_seen and not tls_handshakes:
-            sf.append({"severity": "medium", "title": "TLS records observed but handshake messages were not decoded", "evidence": "TLS record framing was visible, but no complete handshake message was decoded from the captured direction."})
-
         sid = f"S{len(sessions)+1:03d}"
         for finding in sf:
             findings.append({**finding, "session": sid})
@@ -460,8 +452,19 @@ def analyze(data: bytes, name: str):
             "end_time": last[0],
         })
 
-    score = max(0, 100 - sum({"high":20, "medium":10, "low":5, "critical":30}.get(x["severity"], 0) for x in findings))
+    findings = evaluate_all(sessions)
+
+    score = max(
+        0,
+        100 - sum(
+            {"high": 20, "medium": 10, "low": 5, "critical": 30}.get(
+                x["severity"], 0
+            )
+            for x in findings
+        ),
+    )
     level = "CRITICAL" if score < 40 else "HIGH" if score < 60 else "MEDIUM" if score < 80 else "LOW"
+
     return {
         "filename": name,
         "offline": True,
