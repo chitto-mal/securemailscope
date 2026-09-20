@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SecureMailScope — Offline Forensic Analyzer</title>
+<style>
+body{margin:0;background:#07111f;color:#e8eef7;font-family:Inter,system-ui,sans-serif}.wrap{max-width:1200px;margin:auto;padding:28px}.top{display:flex;justify-content:space-between;gap:16px;align-items:center}.brand{font-size:28px;font-weight:800}.badge{padding:8px 12px;border-radius:999px;background:#123b2d;color:#71e6aa}.hero,.card{background:#0d1d30;border:1px solid #203b55;border-radius:18px;padding:20px}.hero{margin-top:20px}.muted{color:#9db0c6}.upload{display:flex;gap:12px;margin-top:18px;flex-wrap:wrap}.input{flex:1;min-width:240px;padding:13px;background:#091725;color:#fff;border:1px dashed #52718e;border-radius:10px}button{padding:13px 18px;border:0;border-radius:10px;font-weight:800;cursor:pointer}.primary{background:#49b8ff}.secondary{background:#203b55;color:#e8eef7}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px}.value{font-size:30px;font-weight:800;margin-top:8px}.score{font-size:48px}.section{margin-top:18px}.finding{padding:14px;margin:10px 0;border-left:4px solid #f5b942;background:#111f31;border-radius:8px}.high{border-left-color:#ff6878}.medium{border-left-color:#f5b942}.info{border-left-color:#49b8ff}.detail{background:#091725;padding:14px;border-radius:10px;margin:10px 0}.pill{display:inline-block;padding:4px 8px;border:1px solid #294966;border-radius:999px;margin:2px;font-size:12px}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:10px;border-bottom:1px solid #20374d;vertical-align:top}.hidden{display:none}.mono{font-family:monospace;font-size:12px;word-break:break-word}@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:500px){.grid{grid-template-columns:1fr}.wrap{padding:15px}}
+</style>
+</head>
+<body><div class="wrap">
+<div class="top"><div class="brand">🛡️ SecureMailScope</div><div class="badge">● OFFLINE ANALYSIS</div></div>
+<div class="hero"><h1>Cryptographic Security Posture</h1><div class="muted">Passive forensic analysis of email transport traffic from PCAP/PCAPNG evidence.</div>
+<div class="upload"><input id="file" class="input" type="file" accept=".pcap,.pcapng"><button class="primary" onclick="analyze()">Analyze PCAP</button><button class="secondary" onclick="downloadReport('json')">JSON Report</button><button class="secondary" onclick="downloadReport('pdf')">PDF Report</button></div><div id="status" class="muted" style="margin-top:12px"></div></div>
+<div id="results" class="hidden">
+<div class="grid"><div class="card"><div class="muted">Posture score</div><div id="score" class="value score">—</div><div id="level"></div></div><div class="card"><div class="muted">Packets</div><div id="packets" class="value">—</div></div><div class="card"><div class="muted">Mail sessions</div><div id="sessions" class="value">—</div></div><div class="card"><div class="muted">Findings</div><div id="findings" class="value">—</div></div></div>
+<div class="section card"><h2>Protocol visibility</h2><div id="protocols" class="muted"></div></div>
+<div class="section card"><h2>TLS & X.509 evidence</h2><div id="tls"></div></div>
+<div class="section card"><h2>Explainable findings</h2><div id="findingList"></div></div>
+<div class="section card"><h2>Reconstructed sessions</h2><table class="table"><thead><tr><th>ID</th><th>Protocol</th><th>Endpoints</th><th>STARTTLS</th><th>TLS</th><th>Handshake</th><th>Certs</th></tr></thead><tbody id="sessionList"></tbody></table></div>
+<div class="section card"><h2>Evidence limitations</h2><ul id="limits"></ul></div>
+</div></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function selectedFile(){return $('file').files[0]}
+async function analyze(){
+ const f=selectedFile();if(!f){alert('Select a PCAP/PCAPNG first.');return}
+ $('status').textContent='Analyzing locally…';const fd=new FormData();fd.append('file',f);
+ try{const r=await fetch('/api/analyze',{method:'POST',body:fd});const d=await r.json();if(!r.ok)throw Error(d.error||'Analysis failed');
+ $('results').classList.remove('hidden');$('score').textContent=d.score+'/100';$('level').textContent=d.risk_level+' RISK';$('packets').textContent=d.packet_count;$('sessions').textContent=d.tcp_mail_sessions;$('findings').textContent=d.findings.length;
+ $('protocols').textContent=Object.entries(d.protocol_counts).map(([k,v])=>k+': '+v).join(' • ')||'No mail protocol observed';
+ $('tls').innerHTML=d.sessions.map(s=>'<div class="detail"><b>'+esc(s.id)+' — '+esc(s.protocol)+'</b><div class="muted">TLS records: '+esc(s.tls_record_count)+' • Handshakes: '+esc(s.tls_handshake_count)+' • Complete: '+(s.tls_handshake_complete?'Yes':'No')+'</div>'+
+ (s.client_hello?'<div><b>ClientHello</b> — versions: '+esc((s.client_hello.details.supported_versions||[]).join(', ')||'not observed')+'; SNI: '+esc(s.client_hello.details.server_name||'not observed')+'; ciphers: '+esc((s.client_hello.details.cipher_suites||[]).join(', ')||'not observed')+'</div>':'')+
+ (s.server_hello?'<div><b>ServerHello</b> — selected version: '+esc(s.server_hello.details.selected_version||s.server_hello.details.legacy_version||'not observed')+'; cipher: '+esc(s.server_hello.details.cipher_suite||'not observed')+'</div>':'')+
+ '<div><b>X.509 certificates:</b> '+s.certificates.length+'</div>'+s.certificates.map(c=>'<div class="detail"><b>Subject:</b> '+esc(c.subject)+'<br><b>Issuer:</b> '+esc(c.issuer)+'<br><b>Validity:</b> '+esc(c.not_valid_before)+' → '+esc(c.not_valid_after)+'<br><b>Key:</b> '+esc(c.public_key_type)+' '+esc(c.public_key_size||'')+'<br><b>Signature:</b> '+esc(c.signature_algorithm)+'<br><b>SAN:</b> '+esc((c.san||[]).join(', ')||'none')+'</div>').join('')+'</div>').join('')||'<div class="muted">No mail sessions.</div>';
+ $('findingList').innerHTML=d.findings.length?d.findings.map(x=>'<div class="finding '+esc(x.severity)+'"><b>'+esc(x.rule_id||'RULE')+' — '+esc(x.title)+'</b><div>'+esc(x.evidence)+'</div><div class="muted">Remediation: '+esc(x.remediation||'Review the evidence.')+'</div></div>').join(''):'<div class="muted">No rule findings.</div>';
+ $('sessionList').innerHTML=d.sessions.map(s=>'<tr><td>'+esc(s.id)+'</td><td>'+esc(s.protocol)+'</td><td class="mono">'+esc(s.source)+' → '+esc(s.destination)+'</td><td>'+ (s.starttls?'Yes':'No')+'</td><td>'+ (s.tls_seen?'Yes':'No')+'</td><td>'+esc(s.tls_handshake_count)+'</td><td>'+esc(s.certificates.length)+'</td></tr>').join('');
+ $('limits').innerHTML=d.limitations.map(x=>'<li>'+esc(x)+'</li>').join('');$('status').textContent='Analysis complete — '+d.filename;
+ }catch(e){$('status').textContent='Error: '+e.message}
+}
+async function downloadReport(kind){
+ const f=selectedFile();if(!f){alert('Select a PCAP/PCAPNG first.');return}
+ const fd=new FormData();fd.append('file',f);const r=await fetch('/api/report/'+kind,{method:'POST',body:fd});if(!r.ok){const d=await r.json();alert(d.error||'Report failed');return}
+ const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='securemailscope-report.'+kind;a.click();URL.revokeObjectURL(a.href);
+}
+</script></body></html>
