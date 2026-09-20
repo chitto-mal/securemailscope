@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
+from backend.reporting import build_json, build_pdf
 from fastapi.staticfiles import StaticFiles
 from backend.rules import evaluate_all
 from backend.risk_fusion import calculate_score
@@ -491,6 +492,30 @@ def index():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "mode": "offline", "version": app.version}
+
+
+@app.post("/api/report/json")
+async def api_report_json(file: UploadFile = File(...)):
+    data = await file.read()
+    try:
+        result = analyze(data, file.filename or "capture.pcap")
+        return Response(content=build_json(result), media_type="application/json", headers={
+            "Content-Disposition": "attachment; filename=securemailscope-report.json"
+        })
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
+
+
+@app.post("/api/report/pdf")
+async def api_report_pdf(file: UploadFile = File(...)):
+    data = await file.read()
+    try:
+        result = analyze(data, file.filename or "capture.pcap")
+        return Response(content=build_pdf(result), media_type="application/pdf", headers={
+            "Content-Disposition": "attachment; filename=securemailscope-report.pdf"
+        })
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"error": str(e)})
 
 
 @app.post("/api/analyze")
