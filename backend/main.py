@@ -8,6 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from rules import evaluate_all
+from risk_fusion import calculate_score
+from ml_anomaly import detect_session_anomalies
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -453,17 +455,10 @@ def analyze(data: bytes, name: str):
         })
 
     findings = evaluate_all(sessions)
-
-    score = max(
-        0,
-        100 - sum(
-            {"high": 20, "medium": 10, "low": 5, "critical": 30}.get(
-                x["severity"], 0
-            )
-            for x in findings
-        ),
-    )
-    level = "CRITICAL" if score < 40 else "HIGH" if score < 60 else "MEDIUM" if score < 80 else "LOW"
+    anomaly_signals = detect_session_anomalies(sessions)
+    risk = calculate_score(findings, anomaly_signals)
+    score = risk["score"]
+    level = risk["risk_level"]
 
     return {
         "filename": name,
@@ -474,6 +469,8 @@ def analyze(data: bytes, name: str):
         "tls_versions": dict(tls_versions),
         "score": score,
         "risk_level": level,
+        "risk_fusion": risk,
+        "ml_anomaly_signals": anomaly_signals,
         "findings": findings,
         "sessions": sessions,
         "limitations": [
