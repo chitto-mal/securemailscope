@@ -215,6 +215,98 @@ def parse_server_hello(body: bytes):
     return result
 
 
+def parse_certificate_message(body: bytes):
+    certs = []
+    if len(body) < 3:
+        return certs, False
+    total_len = int.from_bytes(body[0:3], "big")
+    end = min(len(body), 3 + total_len)
+    pos = 3
+    complete = end == 3 + total_len
+    while pos + 3 <= end:
+        cert_len = int.from_bytes(body[pos:pos + 3], "big")
+        pos += 3
+        if pos + cert_len > end:
+            return certs, False
+        certs.append(body[pos:pos + cert_len])
+        pos += cert_len
+        if pos < end:
+            if pos + 2 > end:
+                return certs, False
+            ext_len = int.from_bytes(body[pos:pos + 2], "big")
+            pos += 2 + ext_len
+            if pos > end:
+                return certs, False
+    return certs, complete and pos == end
+
+
+def inspect_x509_certificate(der: bytes):
+    from cryptography import x509
+    from cryptography.hazmat.primitives.asymmetric import ec, ed25519, ed448, rsa
+
+    cert = x509.load_der_x509_certificate(der)
+
+    def name_value(name):
+        attrs = name.get_attributes_for_oid(x509.NameOID.COMMON_NAME)
+        return attrs[0].value if attrs else None
+
+    public_key = cert.public_key()
+    if isinstance(public_key, rsa.RSAPublicKey):
+        key_type, key_size = "RSA", public_key.key_size
+    elif isinstance(public_key, ec.EllipticCurvePublicKey):
+        key_type, key_size = "EC", public_key.key_size
+    elif isinstance(public_key, ed25519.Ed25519PublicKey):
+        key_type, key_size = "Ed25519", 256
+    elif isinstance(public_key, ed448.Ed448PublicKey):
+        key_type, key_size = "Ed448", 448
+    else:
+        key_type, key_size = type(public_key).__name__, None
+
+    now = datetime.now(timezone.utc)
+    not_before = cert.not_valid_before_utc
+    not_after = cert.not_valid_after_utc
+    return {
+        "subject": name_value(cert.subject),
+        "issuer": name_value(cert.issuer),
+        "serial_number": str(cert.serial_number),
+        "version": cert.version.name,
+        "signature_algorithm": cert.signature_hash_algorithm.name if cert.signature_hash_algorithm else None,
+        "public_key_type": key_type,
+        "public_key_size": key_size,
+        "not_valid_before": not_before.isoformat(),
+        "not_valid_after": not_after.isoformat(),
+        "expired": now > not_after,
+        "not_yet_valid": now < not_before,
+        "self_signed": cert.subject == cert.issuer,
+        "san": [
+            value.value
+            for ext in cert.extensions
+            if ext.oid == x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            for value in ext.value
+        ],
+    }
+
+
+def extract_certificates(tls_handshakes):
+    certificates = []
+    errors = []
+    for item in tls_handshakes:
+        if item["name"] != "Certificate":
+            continue
+        body = item.get("_body")
+        if body is None:
+            continue
+        raw_certs, complete = parse_certificate_message(body)
+        if not complete:
+            errors.append("A Certificate handshake message was incomplete or truncated.")
+        for der in raw_certs:
+            try:
+                certificates.append(inspect_x509_certificate(der))
+            except Exception:
+                errors.append("Certificate could not be decoded.")
+    return certificates, errors
+
+
 def tls_handshake_summary(records):
     handshakes = []
     for record in records:
@@ -229,11 +321,15 @@ def tls_handshake_summary(records):
                 14: "ServerHelloDone",
                 20: "Finished",
             }.get(msg_type, f"Handshake({msg_type})")
-            item = {"type": msg_type, "name": name, "length": len(body)}
+            item = {"type": msg_type, "name": name, "length": len(body), "_body": body}
             if msg_type == 1:
                 item["details"] = parse_client_hello(body)
             elif msg_type == 2:
                 item["details"] = parse_server_hello(body)
+            elif msg_type == 11:
+                raw_certs, complete = parse_certificate_message(body)
+                item["certificate_count"] = len(raw_certs)
+                item["certificate_parse_complete"] = complete
             handshakes.append(item)
         if not complete:
             return handshakes, False
@@ -337,6 +433,9 @@ def analyze(data: bytes, name: str):
         first, last = unique[0], unique[-1]
         client_hello = next((x for x in tls_handshakes if x["name"] == "ClientHello"), None)
         server_hello = next((x for x in tls_handshakes if x["name"] == "ServerHello"), None)
+        certificates, certificate_errors = extract_certificates(tls_handshakes)
+        for item in tls_handshakes:
+            item.pop("_body", None)
         sessions.append({
             "id": sid,
             "protocol": flow["protocol"],
@@ -353,6 +452,8 @@ def analyze(data: bytes, name: str):
             "tls_handshake_complete": tls_complete and bool(tls_handshakes),
             "client_hello": client_hello,
             "server_hello": server_hello,
+            "certificates": certificates,
+            "certificate_errors": certificate_errors,
             "tls_directions": tls_direction_details,
             "findings": sf,
             "start_time": first[0],
