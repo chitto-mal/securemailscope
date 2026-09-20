@@ -16,6 +16,13 @@ SecureMailScope now extracts observable TLS record and handshake metadata from r
 - ServerHello selected version when the supported_versions extension is visible
 - ServerHello selected cipher suite
 - Handshake completeness status
+- X.509 certificate chain entries when a Certificate handshake is visible
+- Certificate subject and issuer common names
+- Certificate validity window and expired/not-yet-valid status
+- Public-key type and size
+- Signature hash algorithm
+- Self-signed status
+- Subject Alternative Names (SANs)
 
 ## Evidence rule
 
