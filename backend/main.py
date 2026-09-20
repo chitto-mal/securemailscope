@@ -219,7 +219,7 @@ def parse_server_hello(body: bytes):
     return result
 
 
-def parse_certificate_message(body: bytes):
+def parse_certificate_message(body: bytes, tls13: bool = False):
     certs = []
     if len(body) < 3:
         return certs, False
@@ -234,7 +234,7 @@ def parse_certificate_message(body: bytes):
             return certs, False
         certs.append(body[pos:pos + cert_len])
         pos += cert_len
-        if pos < end:
+        if tls13 and pos < end:
             if pos + 2 > end:
                 return certs, False
             ext_len = int.from_bytes(body[pos:pos + 2], "big")
@@ -300,7 +300,10 @@ def extract_certificates(tls_handshakes):
         body = item.get("_body")
         if body is None:
             continue
-        raw_certs, complete = parse_certificate_message(body)
+        server_hello = next((x for x in tls_handshakes if x["name"] == "ServerHello"), None)
+        selected_version = (server_hello or {}).get("details", {}).get("selected_version")
+        tls13 = selected_version == "1.4"
+        raw_certs, complete = parse_certificate_message(body, tls13=tls13)
         if not complete:
             errors.append("A Certificate handshake message was incomplete or truncated.")
         for der in raw_certs:
