@@ -9,3 +9,24 @@
 7. Disconnect Wi-Fi and repeat to demonstrate offline operation.
 
 Do not describe synthetic/demo data as a real incident capture.
+
+## Docker offline demo
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+Open `http://127.0.0.1:8000`.
+
+The container runs the analyzer locally. No cloud service or live mail-server connection is required.
+
+## Reports
+
+For automation/API testing, upload the same PCAP to:
+
+- `POST /api/report/json`
+- `POST /api/report/pdf`
+
+Only evidence visible in the capture is reported.
