@@ -42,3 +42,22 @@ The offline prototype now includes:
 - `POST /api/report/pdf` — upload a PCAP/PCAPNG and download a PDF report
 
 The ML signal is optional and explicitly reports insufficient data when a capture does not contain enough comparable sessions. It does not replace deterministic forensic rules.
+
+
+## Smoke test
+
+From the repository root, after installing dependencies:
+
+```bash
+python -m unittest backend.test_smoke
+```
+
+The test builds a deterministic five-packet SMTP/STARTTLS/TLS capture in memory and verifies bidirectional session reconstruction, STARTTLS detection, TLS visibility, and handshake decoding.
+
+## Demo fixture
+
+Decode the committed base64 fixture into a local PCAP with:
+
+```bash
+python backend/demo/decode_fixture.py
+```
