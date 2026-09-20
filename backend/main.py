@@ -489,7 +489,7 @@ def analyze(data: bytes, name: str):
 
 @app.get("/")
 def index():
-    return FileResponse(WEB / "index.html")
+    return FileResponse(WEB / "index_v2.html")
 
 
 @app.get("/api/health")
