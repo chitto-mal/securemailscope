@@ -3,7 +3,8 @@ from __future__ import annotations
 from fastapi import UploadFile
 from fastapi.responses import JSONResponse
 
-from backend.reporting import build_json, build_pdf
+from fastapi.responses import Response
+from backend.repositories.report_repository import ReportRepository
 from backend.services.analysis_service import AnalysisService
 
 
@@ -13,6 +14,7 @@ class AnalysisController:
     def __init__(self, analyzer):
         self.analyzer = analyzer
         self.service = AnalysisService()
+        self.report_repository = ReportRepository()
 
     async def analyze(self, file: UploadFile):
         try:
@@ -27,8 +29,9 @@ class AnalysisController:
     async def report_json(self, file: UploadFile):
         try:
             result = await self._analyze(file)
-            return JSONResponse(
-                content={"report": build_json(result)},
+            return Response(
+                content=self.report_repository.json(result),
+                media_type="application/json",
                 headers={"Content-Disposition": "attachment; filename=securemailscope-report.json"},
             )
         except Exception as exc:
@@ -37,9 +40,8 @@ class AnalysisController:
     async def report_pdf(self, file: UploadFile):
         try:
             result = await self._analyze(file)
-            from fastapi.responses import Response
             return Response(
-                content=build_pdf(result),
+                content=self.report_repository.pdf(result),
                 media_type="application/pdf",
                 headers={"Content-Disposition": "attachment; filename=securemailscope-report.pdf"},
             )
