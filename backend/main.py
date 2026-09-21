@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
-from backend.reporting import build_json, build_pdf
+from backend.controllers.analysis_controller import AnalysisController
 from fastapi.staticfiles import StaticFiles
 from backend.rules import evaluate_all
 from backend.risk_fusion import calculate_score
@@ -499,37 +499,19 @@ def health():
 
 @app.post("/api/report/json")
 async def api_report_json(file: UploadFile = File(...)):
-    data = await file.read()
-    try:
-        result = analyze(data, file.filename or "capture.pcap")
-        return Response(content=build_json(result), media_type="application/json", headers={
-            "Content-Disposition": "attachment; filename=securemailscope-report.json"
-        })
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
+    return await analysis_controller.report_json(file)
 
 
 @app.post("/api/report/pdf")
 async def api_report_pdf(file: UploadFile = File(...)):
-    data = await file.read()
-    try:
-        result = analyze(data, file.filename or "capture.pcap")
-        return Response(content=build_pdf(result), media_type="application/pdf", headers={
-            "Content-Disposition": "attachment; filename=securemailscope-report.pdf"
-        })
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
+    return await analysis_controller.report_pdf(file)
 
 
 @app.post("/api/analyze")
 async def api_analyze(file: UploadFile = File(...)):
-    data = await file.read()
-    if len(data) > 50 * 1024 * 1024:
-        return JSONResponse(status_code=413, content={"error": "Capture exceeds 50 MB demo limit."})
-    try:
-        return analyze(data, file.filename or "capture.pcap")
-    except Exception as e:
-        return JSONResponse(status_code=400, content={"error": str(e)})
+    return await analysis_controller.analyze(file)
 
 
 app.mount("/assets", StaticFiles(directory=WEB), name="assets")
+
+analysis_controller = AnalysisController(analyze)
