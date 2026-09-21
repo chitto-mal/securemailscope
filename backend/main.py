@@ -302,7 +302,7 @@ def extract_certificates(tls_handshakes):
             continue
         server_hello = next((x for x in tls_handshakes if x["name"] == "ServerHello"), None)
         selected_version = (server_hello or {}).get("details", {}).get("selected_version")
-        tls13 = selected_version == "1.4"
+        tls13 = selected_version == "1.3"
         raw_certs, complete = parse_certificate_message(body, tls13=tls13)
         if not complete:
             errors.append("A Certificate handshake message was incomplete or truncated.")
